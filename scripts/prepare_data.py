@@ -54,12 +54,17 @@ def from_gqa_train(
     max_samples: int | None,
     seed: int,
 ) -> list[dict[str, Any]]:
-    ds = load_dataset(dataset_name, split="train")
+    instr = load_dataset(dataset_name, "train_balanced_instructions", split="train")
     if max_samples is not None:
-        ds = ds.shuffle(seed=seed).select(range(min(max_samples, len(ds))))
+        instr = instr.shuffle(seed=seed).select(range(min(max_samples, len(instr))))
+
+    needed_ids = set(instr["imageId"])
+    imgs = load_dataset(dataset_name, "train_balanced_images", split="train")
+    imgs = imgs.filter(lambda x: x["id"] in needed_ids)
+    img_by_id = {row["id"]: row["image"] for row in imgs}
 
     rows: list[dict[str, Any]] = []
-    for item in ds:
+    for item in instr:
         question = item["question"].rstrip()
         if post_prompt and not question.endswith(post_prompt.strip()):
             question = f"{question}{post_prompt}"
@@ -68,7 +73,7 @@ def from_gqa_train(
             {
                 "source": "gqa_ru",
                 "id": item.get("id"),
-                "image": item.get("image") or item.get("imageId"),
+                "image": img_by_id[item["imageId"]],
                 "messages": [
                     {"role": "user", "content": f"<image>\n{question}"},
                     {"role": "assistant", "content": str(answer)},

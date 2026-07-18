@@ -97,10 +97,16 @@ class VLMDataCollator:
 
 def build_online_dataset(cfg: dict[str, Any]):
     """Упрощённый онлайн-микс без локального JSONL (GQA-ru train)."""
-    gqa = load_dataset(cfg["gqa_dataset"], split="train")
+    dataset_name = cfg["gqa_dataset"]
+    instr = load_dataset(dataset_name, "train_balanced_instructions", split="train")
     max_samples = cfg.get("max_samples")
     if max_samples:
-        gqa = gqa.shuffle(seed=cfg.get("seed", 42)).select(range(min(max_samples, len(gqa))))
+        instr = instr.shuffle(seed=cfg.get("seed", 42)).select(range(min(max_samples, len(instr))))
+
+    needed_ids = set(instr["imageId"])
+    imgs = load_dataset(dataset_name, "train_balanced_images", split="train")
+    imgs = imgs.filter(lambda x: x["id"] in needed_ids)
+    img_by_id = {row["id"]: row["image"] for row in imgs}
 
     post = cfg.get("gqa_post_prompt", " Ответь одним словом.")
 
@@ -112,10 +118,10 @@ def build_online_dataset(cfg: dict[str, Any]):
                 {"role": "user", "content": f"<image>\n{question}"},
                 {"role": "assistant", "content": str(answer)},
             ],
-            "image": example.get("image"),
+            "image": img_by_id[example["imageId"]],
         }
 
-    return gqa.map(map_row, remove_columns=gqa.column_names)
+    return instr.map(map_row, remove_columns=instr.column_names)
 
 
 def main() -> None:
