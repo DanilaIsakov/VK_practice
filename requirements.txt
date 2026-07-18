@@ -1,0 +1,14 @@
+torch>=2.1.0
+transformers>=4.43.0
+accelerate>=0.33.0
+datasets>=2.20.0
+peft>=0.11.0
+trl>=0.9.0
+bitsandbytes>=0.43.0
+Pillow>=10.0.0
+requests>=2.31.0
+PyYAML>=6.0
+sentencepiece>=0.2.0
+protobuf>=4.25.0
+# Оценка бенчмарков (опционально, тяжёлая зависимость):
+# git+https://github.com/EvolvingLMMs-Lab/lmms-eval.git
