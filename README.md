@@ -8,6 +8,8 @@
 
 ## Быстрый старт
 
+### Локально (нужна NVIDIA GPU + CUDA PyTorch)
+
 ```bash
 python -m venv .venv
 # Windows:
@@ -29,6 +31,10 @@ python scripts/train_lora.py --config configs/train_lora.yaml
 # Оценка (нужны GPU + lmms-eval)
 python scripts/evaluate_lmms.py --model outputs/ruvlm-gemma-2b-lora
 ```
+
+### Google Colab (рекомендуется без локальной GPU)
+
+Откройте [`notebooks/train_colab.ipynb`](notebooks/train_colab.ipynb) в Colab, выберите Runtime → **T4 GPU** и запустите ячейки.
 
 ## Как используются данные VK
 
