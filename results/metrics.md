@@ -110,9 +110,3 @@ model = LlavaForConditionalGeneration.from_pretrained(
 model = PeftModel.from_pretrained(model, ADAPTER)
 model.eval()
 ```
-
-## Итог для отчёта
-
-1. Получен воспроизводимый LoRA-адаптер на открытых данных **deepvk/GQA-ru**.
-2. Финальный прогон: **2 эпохи, 624 step, r=32**, loss **12.17 → 1.26**.
-3. Артефакт готов к демонстрации; числовые бенчмарки — опциональный следующий шаг через `lmms-eval`.
