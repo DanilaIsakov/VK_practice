@@ -55,21 +55,21 @@
 
 ## Гиперпараметры обучения
 
-Заполните после фактического прогона (шаблон):
+Фактический прогон (Colab T4, 2026-07-19):
 
 | Параметр | Значение |
 | --- | --- |
-| LoRA r / alpha / dropout | 32 / 64 / 0.05 |
-| Target modules | `q_proj`, `v_proj`, `k_proj`, `o_proj`, `gate_proj`, `up_proj`, `down_proj` |
+| LoRA r / alpha / dropout | 16 / 32 / 0.05 |
+| Target modules | `q_proj`, `v_proj` |
 | Learning rate | 1e-4 |
 | Warmup ratio | 0.03 |
-| Weight decay | 0.0 |
 | Epochs | 1 |
-| Effective batch size | 16 |
-| Precision | bf16 |
-| Max seq length | 2048 |
-| Hardware | (указать GPU) |
-| Training time | (указать) |
+| Per-device batch / grad accum | 1 / 8 |
+| Precision | fp16 |
+| Gradient checkpointing | да (`use_reentrant=False`) |
+| Optimizer steps | 620 |
+| Train loss | 12.17 → ~1.22 |
+| Hardware | Google Colab T4 |
 
 ## Результаты
 
@@ -81,14 +81,16 @@
 | deepvk/llava-gemma-2b-lora | 46.37 | 40.19 |
 | deepvk/llava-saiga-8b | 51.44 | 56.65 |
 
-Результаты **этой** модели после обучения:
+Результаты **этой** модели:
 
 | Метрика | Значение |
 | --- | --- |
-| GQA-ru ExactMatch | _заполнить после `evaluate_lmms.py`_ |
-| MMBench-ru ExactMatch | _заполнить после `evaluate_lmms.py`_ |
+| Train loss (620 steps) | 12.17 → ~1.22 |
+| Qualitative demo (RU caption) | стоп-знак описан корректно |
+| GQA-ru ExactMatch | _заполнить после lmms-eval_ |
+| MMBench-ru ExactMatch | _заполнить после lmms-eval_ |
 
-Подробный лог: `results/metrics.md`, сырые логи lmms-eval: `logs/`.
+Подробный лог: `results/metrics.md`.
 
 ## Пример использования
 
