@@ -47,6 +47,21 @@ python scripts/evaluate_lmms.py --model outputs/ruvlm-gemma-2b-lora
 
 Подробности: [docs/PROJECT_DESCRIPTION.md](docs/PROJECT_DESCRIPTION.md), [docs/SOLUTION.md](docs/SOLUTION.md).
 
+## Результаты финального обучения
+
+Артефакт: локально `ruvlm-outputs/` (не в git из‑за размера; скачан из Colab).
+
+| Показатель | Значение |
+| --- | --- |
+| База | `deepvk/llava-gemma-2b-lora` |
+| Данные | `deepvk/GQA-ru` |
+| LoRA | r=32, α=32, `q_proj`+`v_proj` |
+| Прогон | 2 эпохи, 624 steps |
+| Train loss | 12.17 → 1.26 |
+| Размер адаптера | ~26 MB |
+
+Разбор: [results/metrics.md](results/metrics.md), [docs/MODEL_CARD.md](docs/MODEL_CARD.md).
+
 ## Материалы для сдачи
 
 | Требование | Файл |

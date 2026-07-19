@@ -55,21 +55,24 @@
 
 ## Гиперпараметры обучения
 
-Фактический прогон (Colab T4, 2026-07-19):
+Фактический финальный прогон (Colab T4, артефакт `ruvlm-outputs`, 2026-07-19):
 
 | Параметр | Значение |
 | --- | --- |
-| LoRA r / alpha / dropout | 16 / 32 / 0.05 |
+| LoRA r / alpha / dropout | **32 / 32 / 0.05** |
 | Target modules | `q_proj`, `v_proj` |
-| Learning rate | 1e-4 |
-| Warmup ratio | 0.03 |
-| Epochs | 1 |
-| Per-device batch / grad accum | 1 / 8 |
+| Learning rate | cosine schedule, peak ~1e-4 (из логов) |
+| Epochs | **2** (`num_train_epochs=2`) |
+| Global steps | **624** |
+| Per-device batch | 1 (+ gradient accumulation, эфф. ~8) |
+| Оценка размера данных | ~2500 примеров GQA-ru / эпоху |
 | Precision | fp16 |
-| Gradient checkpointing | да (`use_reentrant=False`) |
-| Optimizer steps | 620 |
-| Train loss | 12.17 → ~1.22 |
+| Gradient checkpointing | да |
+| PEFT | 0.13.2 |
 | Hardware | Google Colab T4 |
+| Размер адаптера | ~26 MB (`adapter_model.safetensors`) |
+
+Ранний черновик: `checkpoint-32` (LoRA **r=16**, 32 step) — не финал.
 
 ## Результаты
 
@@ -85,12 +88,13 @@
 
 | Метрика | Значение |
 | --- | --- |
-| Train loss (620 steps) | 12.17 → ~1.22 |
+| Train loss (624 steps, 2 epochs) | **12.17 → 1.26** (min 1.16 @ step 550) |
 | Qualitative demo (RU caption) | стоп-знак описан корректно |
-| GQA-ru ExactMatch | _заполнить после lmms-eval_ |
-| MMBench-ru ExactMatch | _заполнить после lmms-eval_ |
+| GQA-ru ExactMatch | _не замерено_ |
+| MMBench-ru ExactMatch | _не замерено_ |
+| Артефакт | `ruvlm-outputs/outputs/ruvlm-gemma-2b-lora/` |
 
-Подробный лог: `results/metrics.md`.
+Подробный разбор: [`results/metrics.md`](../results/metrics.md).
 
 ## Пример использования
 

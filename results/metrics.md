@@ -1,42 +1,90 @@
-# Результаты обучения и оценки
+# Результаты: анализ артефакта `ruvlm-outputs`
 
-## Прогон LoRA (Colab, T4)
+Источник: локальная папка [`ruvlm-outputs/outputs/ruvlm-gemma-2b-lora`](../ruvlm-outputs/outputs/ruvlm-gemma-2b-lora) (скачано из Colab).
+
+## Состав артефакта
+
+| Путь | Назначение | Размер |
+| --- | --- | --- |
+| `adapter_model.safetensors` + `adapter_config.json` | **Финальный LoRA-адаптер** (для инференса) | ~26 MB |
+| `tokenizer*`, `preprocessor_config.json`, `processor_config.json` | Токенизатор / processor | ~37 MB |
+| `checkpoint-624/` | Финальный training checkpoint (адаптер + optimizer) | ~26 MB adapter + ~28 MB optimizer |
+| `checkpoint-500/` | Промежуточный (step 500) | аналогично |
+| `checkpoint-32/` | Ранний прогон (**другой** LoRA: r=16, ~13 MB) | черновик |
+
+Для сдачи и инференса достаточно **корня** `ruvlm-gemma-2b-lora/` (финальный адаптер).  
+`checkpoint-32` — от короткого первого эксперимента, не путать с финалом.
+
+## Конфигурация финального адаптера
+
+Из `adapter_config.json`:
 
 | Параметр | Значение |
 | --- | --- |
-| База | `deepvk/llava-gemma-2b-lora` |
-| Данные | `deepvk/GQA-ru` (`train_balanced_instructions` + images) |
-| Шагов (optimizer steps) | 620 |
-| Logging | каждые 5 шагов |
-| Train loss (start → end) | **12.17 → ~1.22** |
-| Чекпоинт | `outputs/ruvlm-gemma-2b-lora` |
+| Base model | `deepvk/llava-gemma-2b-lora` |
+| PEFT | LoRA (PEFT 0.13.2) |
+| r / alpha / dropout | **32 / 32 / 0.05** |
+| Target modules | `q_proj`, `v_proj` |
+| Task | `CAUSAL_LM` |
+| Inference mode | `true` (сохранённый адаптер) |
 
-### Динамика loss (сводка)
+## Данные обучения
 
-| Участок | Step | Loss | Комментарий |
+- Датасет: **deepvk/GQA-ru** (`train_balanced_instructions` + `train_balanced_images`)
+- Пост-промпт: «Ответь одним словом.»
+- Оценка размера выборки по `trainer_state.json`: ~**312.5 step / epoch** при `train_batch_size=1`  
+  → при `gradient_accumulation_steps=8` ≈ **2500 примеров / эпоху**
+
+## Ход обучения (из `checkpoint-624/trainer_state.json`)
+
+| Параметр | Значение |
+| --- | --- |
+| `num_train_epochs` | **2** |
+| `global_step` / `max_steps` | **624** |
+| `epoch` (факт) | **1.9968** (~2 эпохи) |
+| `logging_steps` | 5 |
+| `save_steps` | 500 |
+| Train loss (step 5 → 620) | **12.1744 → 1.2589** |
+| Минимальный loss | **1.1619** (step 550) |
+| `total_flos` | ~2.08e15 |
+
+### Динамика loss
+
+| Step | Epoch | Loss | Комментарий |
 | --- | --- | --- | --- |
-| Старт | 5 | 12.17 | высокий — модель ещё не адаптировалась |
-| Быстрый спуск | 50 | 4.87 | активное обучение |
-| | 100 | 1.95 | основной спад закончен |
-| | 200 | 1.55 | стабилизация |
-| | 400 | 1.26 | мелкие улучшения |
-| Финиш | 620 | ~1.22–1.26 | плато, дальнейший прогон даёт мало |
+| 5 | 0.02 | 12.17 | старт |
+| 50 | 0.16 | 4.87 | быстрый спуск |
+| 100 | 0.32 | 1.95 | основной спад |
+| 200 | 0.64 | 1.55 | замедление |
+| 400 | 1.28 | 1.26 | плато |
+| 550 | 1.76 | **1.16** | лучшая точка по loss |
+| 620 | 1.98 | 1.26 | финиш (небольшой шум) |
 
-**Вывод:** обучение здоровое. После ~400 шагов gain небольшой — текущий чекпоинт можно фиксировать и скачивать. Имеет смысл оценивать на GQA-ru / MMBench-ru, а не крутить эпохи «до нуля».
+**Вывод:** обучение стабильное, loss упал ~**×10**. После ~400 шагов прирост мал — 2 эпохи достаточно. Один лог с `grad_norm=NaN` (step 40) был единичным, на сходимость не повлиял.
 
-### Качественная проверка (инференс)
+## Сравнение прогонов
 
-Промпт: «Опиши картинку несколькими словами» (фото стоп-знака).
+| Прогон | Steps | LoRA r | Adapter size | Loss end |
+| --- | --- | --- | --- | --- |
+| Короткий (`checkpoint-32`) | 32 | 16 | ~13 MB | ~7–8 (по логам Colab) |
+| **Финал** (корень + `checkpoint-624`) | **624** | **32** | **~26 MB** | **~1.26** |
 
-Ответ модели: *«На фотографии изображен красный стоп-знак, стоящий на улице, рядом с красным зданием.»* — релевантно, по-русски.
+## Качественный инференс
 
-## Протокол бенчмарков (если прогоните lmms-eval)
+Промпт: «Опиши картинку несколькими словами» (стоп-знак).
 
-- Фреймворк: `lmms-eval`
-- Задачи: `gqa-ru`, `mmbench_ru_dev`
-- Batch size: 1
+Ответ: *«На фотографии изображен красный стоп-знак, стоящий на улице, рядом с красным зданием.»*
 
-## Baseline (публично, deepvk)
+Модель отвечает по-русски и по делу.
+
+## Бенчмарки GQA-ru / MMBench-ru
+
+| Метрика | Статус |
+| --- | --- |
+| GQA-ru ExactMatch | не замерено (`lmms-eval`) |
+| MMBench-ru | не замерено |
+
+Ориентиры deepvk (для сравнения после оценки):
 
 | Модель | GQA-ru | MMBench-ru |
 | --- | --- | --- |
@@ -44,15 +92,27 @@
 | deepvk/llava-gemma-2b-lora | 46.37 | 40.19 |
 | deepvk/llava-saiga-8b | 51.44 | 56.65 |
 
-## Наша модель (бенчмарки)
+## Как загружать чекпоинт
 
-| Checkpoint | GQA-ru ExactMatch | MMBench-ru | Дата | Примечание |
-| --- | --- | --- | --- | --- |
-| `outputs/ruvlm-gemma-2b-lora` | _не замерено_ | _не замерено_ | 2026-07-19 | train loss 12.17→1.22 за 620 steps |
+```python
+from peft import PeftModel
+from transformers import AutoProcessor, AutoTokenizer, LlavaForConditionalGeneration
+import torch
 
-## Наблюдения
+BASE = "deepvk/llava-gemma-2b-lora"
+ADAPTER = "ruvlm-outputs/outputs/ruvlm-gemma-2b-lora"  # финальный корень
 
-- Loss стабильно падает без явного взрыва/NaN.
-- После step ~150–200 кривая выходит на плато ~1.2–1.5 — нормально для VLM short-answer.
-- Warning `use_cache` vs gradient checkpointing — ожидаемый, на качество не влияет.
-- Следующий шаг для метрик: `lmms-eval` на `gqa-ru` / `mmbench_ru_dev` (нужна GPU с запасом RAM).
+processor = AutoProcessor.from_pretrained(ADAPTER)
+tokenizer = AutoTokenizer.from_pretrained(ADAPTER)
+model = LlavaForConditionalGeneration.from_pretrained(
+    BASE, torch_dtype=torch.float16, low_cpu_mem_usage=True
+)
+model = PeftModel.from_pretrained(model, ADAPTER)
+model.eval()
+```
+
+## Итог для отчёта
+
+1. Получен воспроизводимый LoRA-адаптер на открытых данных **deepvk/GQA-ru**.
+2. Финальный прогон: **2 эпохи, 624 step, r=32**, loss **12.17 → 1.26**.
+3. Артефакт готов к демонстрации; числовые бенчмарки — опциональный следующий шаг через `lmms-eval`.

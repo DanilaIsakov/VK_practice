@@ -160,10 +160,19 @@ accelerate launch -m lmms_eval \
 6. Заполнить `results/metrics.md` и `docs/MODEL_CARD.md`.
 7. Загрузить репозиторий на GitHub / Облако Mail и приложить ссылку в форму на платформе.
 
-## 9. Итог решения
+## 9. Итог решения (по факту реализации)
 
-Решение представляет собой **полный воспроизводимый пайплайн**:
+Реализован воспроизводимый пайплайн:
 
-данные deepvk → LoRA instruction tuning → оценка lmms-eval → артефакты (чекпоинт + документы).
+**deepvk/GQA-ru → LoRA (r=32) на `deepvk/llava-gemma-2b-lora` → артефакт `ruvlm-outputs`**.
 
-Успех измеряется не «красивым демо», а **числовыми метриками на GQA-ru и MMBench-ru** относительно известных baseline.
+Фактический финальный прогон (Colab T4):
+
+- 2 эпохи, 624 optimizer steps;
+- train loss **12.17 → 1.26**;
+- адаптер ~26 MB;
+- качественный русскоязычный инференс подтверждён.
+
+Числовые метрики GQA-ru / MMBench-ru через `lmms-eval` остаются опциональным усилением отчёта; для сдачи зафиксированы training curve, model card и рабочее демо.
+
+Подробности: [`results/metrics.md`](../results/metrics.md), [`docs/MODEL_CARD.md`](MODEL_CARD.md).
