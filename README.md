@@ -70,7 +70,7 @@ python scripts/evaluate_lmms.py --model outputs/ruvlm-gemma-2b-lora
 | Подробное описание решения | [docs/SOLUTION.md](docs/SOLUTION.md) |
 | Описание обученной модели | [docs/MODEL_CARD.md](docs/MODEL_CARD.md) |
 | Презентация (опционально) | [results/RuVLM_BenchMax.pptx](results/RuVLM_BenchMax.pptx) |
-| Таблица метрик | [results/metrics.md](results/metrics.md) |
+| Таблица метрик / отчёт о результатах | [results/metrics.md](results/metrics.md) |
 
 ## Baseline (публичные результаты deepvk)
 

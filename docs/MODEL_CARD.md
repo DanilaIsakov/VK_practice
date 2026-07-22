@@ -39,19 +39,31 @@
 
 ## Данные обучения (открытые данные VK / deepvk)
 
-| Датасет | Split | Использование |
+| Датасет | Split / config | Использование в финальном прогоне |
 | --- | --- | --- |
-| [deepvk/LLaVA-Instruct-ru](https://huggingface.co/datasets/deepvk/LLaVA-Instruct-ru) | train | Instruction tuning (диалоги, reasoning) |
-| [deepvk/GQA-ru](https://huggingface.co/datasets/deepvk/GQA-ru) | train | Short-answer VQA (+ «Ответь одним словом.») |
+| [deepvk/GQA-ru](https://huggingface.co/datasets/deepvk/GQA-ru) | `train_balanced_instructions` + `train_balanced_images` | SFT (~2500 примеров/эпоху), пост-промпт «Ответь одним словом.» |
+| [deepvk/MMBench-ru](https://huggingface.co/datasets/deepvk/MMBench-ru) | dev | только целевая оценка (не train) |
+| [deepvk/LLaVA-Instruct-ru](https://huggingface.co/datasets/deepvk/LLaVA-Instruct-ru) | train | в финальном прогоне не использовался (лимит RAM) |
 
-Изображения для Instruct-части берутся из COCO (как в исходном пайплайне LLaVA).
+GQA-ru: перевод оригинального GQA (GPT-4-turbo + фильтрация deepvk); вопросы и картинки в раздельных config, связь по `imageId`.
 
-## Данные оценки (не в обучении для MMBench)
+## Данные оценки
 
-| Датасет | Метрика |
-| --- | --- |
-| [deepvk/GQA-ru](https://huggingface.co/datasets/deepvk/GQA-ru) test | ExactMatch |
-| [deepvk/MMBench-ru](https://huggingface.co/datasets/deepvk/MMBench-ru) | ExactMatch / GPTEvalScore |
+| Датасет | Метрика | Статус |
+| --- | --- | --- |
+| GQA-ru testdev | ExactMatch | протокол `lmms-eval`; полный прогон — следующий шаг |
+| MMBench-ru | ExactMatch | то же |
+
+## Результаты и сравнение
+
+| Модель | GQA-ru | MMBench-ru | Примечание |
+| --- | ---: | ---: | --- |
+| Intel/llava-gemma-2b | 0.20 | 28.30 | почти без RU |
+| deepvk/llava-gemma-2b-lora (база) | 46.37 | 40.19 | публичный baseline |
+| deepvk/llava-saiga-8b | 51.44 | 56.65 | более крупная модель |
+| **RuVLM (наш адаптер)** | train **12.17→1.26**; демо OK | — | LoRA r=32, 2 эпохи на GQA-ru |
+
+Анализ и выводы: [`results/metrics.md`](../results/metrics.md).
 
 ## Гиперпараметры обучения
 
@@ -90,8 +102,7 @@
 | --- | --- |
 | Train loss (624 steps, 2 epochs) | **12.17 → 1.26** (min 1.16 @ step 550) |
 | Qualitative demo (RU caption) | стоп-знак описан корректно |
-| GQA-ru ExactMatch | _не замерено_ |
-| MMBench-ru ExactMatch | _не замерено_ |
+| Сравнение с базой deepvk | база: GQA-ru 46.37 / MMBench-ru 40.19 (публично); наш вклад — continued LoRA-tune |
 | Артефакт | `ruvlm-outputs/outputs/ruvlm-gemma-2b-lora/` |
 
 Подробный разбор: [`results/metrics.md`](../results/metrics.md).

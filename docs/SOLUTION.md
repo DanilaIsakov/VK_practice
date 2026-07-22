@@ -43,136 +43,111 @@
 
 Цель компактной модели — превзойти или приблизиться к `llava-gemma-2b-lora`, зафиксировав воспроизводимый пайплайн.
 
-## 3. Данные deepvk: как именно используются
+## 3. Данные deepvk: как именно использовались
 
-### 3.1. `deepvk/LLaVA-Instruct-ru` — основное обучение
+### 3.1. Финальный прогон — `deepvk/GQA-ru`
 
-- ~144k диалогов (`conversation`, `complex_reasoning`).
-- Формат: список реплик `human` / `gpt` + путь к изображению COCO.
-- Использование: преобразование в chat-template LLaVA, обучение генерации ответов ассистента.
+Основной (и единственный в финальном Colab-обучении) датасет:
 
-### 3.2. `deepvk/GQA-ru` — visual QA
+| Config | Роль | Объём |
+| --- | --- | --- |
+| `train_balanced_instructions` | вопросы/ответы для SFT | 40k (взято ~2.5k) |
+| `train_balanced_images` | изображения по `imageId` | 27.5k (только нужные id) |
+| `testdev_*` | оценка ExactMatch | не в train |
 
-- Train: 40k вопросов / 27.5k изображений — **входит в обучение**.
-- Test: 12.2k вопросов / 398 изображений — **только оценка**.
-- Для short-answer режима к вопросу добавляется пост-промпт:  
-  `Ответь одним словом.`
-- Метрика: **ExactMatch** (совпадение однословного ответа).
+Предобработка:
 
-### 3.3. `deepvk/MMBench-ru` — многоаспектная оценка
+1. Раздельная загрузка instructions и images (обязательный `config_name`).
+2. Subset + join по `imageId` **без** `.filter()` по всем 27k (иначе OOM в Colab).
+3. Пост-промпт: ` Ответь одним словом.`
+4. Chat-template LLaVA: `<image>\n{вопрос}` → краткий `answer`.
 
-- Dev: 3910 примеров с вариантами A/B/C/D.
-- **Не используется в обучении** (чтобы не завышать метрику).
-- Метрика: ExactMatch по букве ответа; при наличии OpenAI API — GPTEvalScore.
+Источник и лицензия: Hugging Face `deepvk/GQA-ru` (перевод GPT-4-turbo + фильтрация deepvk).
 
-### 3.4. Подготовка батча
+### 3.2. Другие датасеты коллекции (в финальном train не использовались)
 
-Для каждого примера:
+| Датасет | Зачем в проекте |
+| --- | --- |
+| `deepvk/LLaVA-Instruct-ru` | запланирован для полного instruction tuning; отложен из‑за RAM/времени |
+| `deepvk/MMBench-ru` | **только оценка** (не train), чтобы не завышать метрику |
 
-1. Загрузить изображение.
-2. Собрать prompt по chat-template модели.
-3. Для GQA — добавить «Ответь одним словом.»
-4. Токенизировать текст + обработать изображение через `AutoProcessor`.
-5. В `labels` замаскировать pad-токены значением `-100`.
+### 3.3. Подготовка батча
 
-Скрипт: `scripts/prepare_data.py`.
+1. Изображение RGB + текст вопроса.
+2. `apply_chat_template` + `AutoProcessor`.
+3. `labels`: pad → `-100`.
 
-## 4. Архитектура обучения
+Скрипты: `scripts/prepare_data.py`, `notebooks/train_colab.ipynb`.
 
-### Этап A — (опционально) выравнивание projector
+## 4. Процесс обучения и гиперпараметры
 
-Если стартуем не с готовой deepvk-модели, а с «сырой» связки CLIP + LLM:
+### 4.1. Схема
 
-- заморожены encoder и LLM;
-- обучается только multimodal projector на image–caption парах.
+```
+GQA-ru subset → chat examples
+        ↓
+deepvk/llava-gemma-2b-lora (база)
+        ↓
+LoRA SFT (q_proj, v_proj), fp16, Colab T4
+        ↓
+adapter ~26 MB + processor/tokenizer
+```
 
-В данном проекте по умолчанию **пропускается**: используется уже выровненный чекпоинт deepvk / LLaVA.
+Vision encoder не дообучался отдельно; адаптировался LLM через LoRA.
 
-### Этап B — Instruction tuning (основной)
-
-- Vision encoder: **frozen**.
-- Projector + LLM: обучаются через **LoRA** (ранг 16–64).
-- Датасеты: `LLaVA-Instruct-ru` + train `GQA-ru`.
-- Оптимизатор: AdamW, Cosine LR, warmup.
-- Точность: bf16 / fp16; при нехватке памяти — QLoRA (4-bit).
-
-Конфиг: `configs/train_lora.yaml`.  
-Скрипт: `scripts/train_lora.py`.
-
-### Рекомендуемые гиперпараметры (одна GPU 16–24 GB)
+### 4.2. Фактические гиперпараметры финала
 
 | Параметр | Значение |
 | --- | --- |
-| LoRA rank / alpha | 32 / 64 |
-| Learning rate | 1e-4 … 2e-4 |
-| Batch size (effective) | 16–64 (через grad accumulation) |
-| Epochs | 1–2 |
-| Max sequence length | 2048 |
-| Max image resolution | как у базовой модели |
+| LoRA r / alpha / dropout | 32 / 32 / 0.05 |
+| Target modules | `q_proj`, `v_proj` |
+| LR | cosine, peak 1e-4 |
+| Epochs / steps | 2 / 624 |
+| Batch / grad accum | 1 / 8 |
+| Precision | fp16 |
+| Gradient checkpointing | да |
+| PEFT | 0.13.2 |
+| Train loss | 12.17 → 1.26 |
 
-## 5. Оценка
+Конфиг-шаблон: `configs/train_lora.yaml`.  
+Обучение: `scripts/train_lora.py` / Colab-ноутбук.
 
-Используется фреймворк **lmms-eval** (как рекомендует deepvk):
+### 4.3. Оценка
 
-```bash
-accelerate launch -m lmms_eval \
-  --model llava_hf \
-  --model_args pretrained="PATH_TO_CHECKPOINT" \
-  --tasks gqa-ru,mmbench_ru_dev \
-  --batch_size 1 \
-  --log_samples \
-  --log_samples_suffix ruvlm \
-  --output_path ./logs/
-```
+Целевой протокол — `lmms-eval` (`gqa-ru`, `mmbench_ru_dev`), обёртка `scripts/evaluate_lmms.py`.
 
-Обёртка: `scripts/evaluate_lmms.py`.
+В сдаче зафиксированы train-метрики, качественное демо и сравнение с **опубликованными** baseline deepvk. Полный ExactMatch на testdev — следующий шаг на GPU (см. [`results/metrics.md`](../results/metrics.md)).
 
-Протокол сравнения:
+## 5. Инференс (демонстрация)
 
-1. Оценить baseline (`deepvk/llava-gemma-2b-lora`).
-2. Оценить свою модель на тех же задачах и сидах.
-3. Записать метрики в `results/metrics.md`.
+Скрипт `scripts/infer_demo.py` и ячейки Colab:
 
-## 6. Инференс (демонстрация)
+- загружают базу + LoRA-адаптер;
+- принимают изображение и вопрос на русском;
+- печатают ответ.
 
-Скрипт `scripts/infer_demo.py`:
+Подтверждено качественное RU-описание внешнего фото (стоп-знак).
 
-- загружает чекпоинт;
-- принимает путь к изображению и вопрос на русском;
-- печатает ответ модели.
+## 6. Ограничения и риски
 
-Это нужно для качественной проверки «жизнеспособности» модели на реальных примерах (не только по бенчмарку).
+- Subset GQA-ru и лимит Colab RAM ограничивают полноту тюнинга.
+- Полный ExactMatch через `lmms-eval` требует отдельного GPU-прогона после обучения.
+- **Метрика ExactMatch** строгая: синонимы считаются ошибкой.
+- Соблюдайте лицензии Gemma и датасетов deepvk.
 
-## 7. Ограничения и риски
+## 7. План работ (выполнен)
 
-- **Вычислительные ресурсы**: полный прогон на всём `LLaVA-Instruct-ru` может занять много часов; для отладки используйте `max_samples` в конфиге.
-- **Утечка данных**: train GQA-ru близок по домену к test — это осознанный приём deepvk; MMBench-ru в train не включаем.
-- **Метрика ExactMatch** строгая: синонимы («мужчина» / «человек») считаются ошибкой.
-- **Лицензии**: соблюдайте лицензии Gemma, COCO и датасетов deepvk при публикации чекпоинта.
+1. Изучены VLM / LLaVA и коллекция deepvk.
+2. Собран пайплайн (скрипты + Colab).
+3. Обучен LoRA-адаптер на GQA-ru.
+4. Зафиксированы метрики обучения, сравнение с baseline, анализ и выводы в `results/metrics.md`.
+5. Репозиторий: https://github.com/DanilaIsakov/VK_practice
 
-## 8. План работ (алгоритм выполнения)
+## 8. Итог
 
-1. Установить зависимости (`requirements.txt`).
-2. Прогнать `infer_demo.py` на baseline — убедиться, что окружение работает.
-3. Подготовить данные (`prepare_data.py`).
-4. Запустить LoRA-обучение (`train_lora.py`).
-5. Оценить на GQA-ru / MMBench-ru (`evaluate_lmms.py`).
-6. Заполнить `results/metrics.md` и `docs/MODEL_CARD.md`.
-7. Загрузить репозиторий на GitHub / Облако Mail и приложить ссылку в форму на платформе.
+Получен воспроизводимый результат:
 
-## 9. Итог решения (по факту реализации)
+**deepvk/GQA-ru → LoRA (r=32) на deepvk/llava-gemma-2b-lora → адаптер ~26 MB, loss 12.17→1.26.**
 
-Реализован воспроизводимый пайплайн:
-
-**deepvk/GQA-ru → LoRA (r=32) на `deepvk/llava-gemma-2b-lora` → артефакт `ruvlm-outputs`**.
-
-Фактический финальный прогон (Colab T4):
-
-- 2 эпохи, 624 optimizer steps;
-- train loss **12.17 → 1.26**;
-- адаптер ~26 MB;
-- качественный русскоязычный инференс подтверждён.
-
-Числовые метрики GQA-ru / MMBench-ru через `lmms-eval` остаются опциональным усилением отчёта; для сдачи зафиксированы training curve, model card и рабочее демо.
-
-Подробности: [`results/metrics.md`](../results/metrics.md), [`docs/MODEL_CARD.md`](MODEL_CARD.md).
+Подробный отчёт (датасет, гиперпараметры, сравнение, анализ, выводы):  
+[`results/metrics.md`](../results/metrics.md).
